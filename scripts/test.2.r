@@ -1,6 +1,10 @@
 # Assignment 1:  
 library(tweedie) 
 library(ggplot2)
+library(parallel)
+library(doParallel)
+library(foreach)
+library(dplyr)
 
 simTweedieTest <-  
   function(N){ 
@@ -25,30 +29,44 @@ df <-
     M = 1000, 
     share_reject = NA) 
 
+#-- Task 2
 
-for(i in 1:nrow(df)){ 
-  df$share_reject[i] <-  
-    MTweedieTests( 
-      N=df$N[i], 
-      M=df$M[i], 
-      sig=.05) 
-} 
+# Set up the dataframe
 
 
+# Determine the number of cores to use
+maxcores <- 8
+Cores <- min(parallel::detectCores(), maxcores)
 
+# Instantiate the cluster
+cl <- makeCluster(Cores)
 
-## Assignemnt 4 
-   
-# This is one way of solving it - maybe you have a better idea? 
-# First, write a function for simulating data, where the "type" 
-# argument controls the distribution. We also need to ensure 
-# that the mean "mu" is the same for both distributions. This 
-# argument will also be needed in the t-test for the null 
-# hypothesis. Therefore, if we hard code in a value here 
-# we may later have an inconsistency between the mean of the 
-# distributions and the t-test. So, we add it as an explicit 
-# argument:  
+# Register the cluster with the foreach package
+registerDoParallel(cl)
 
+# Perform the parallel computation
+res <- foreach(i = 1:nrow(df),
+               .combine = 'rbind',
+               .packages = c('tweedie')) %dopar% {
+  data.frame(
+    N = df$N[i],
+    M = df$M[i],
+    share_reject = MTweedieTests(
+      N = df$N[i],
+      M = df$M[i],
+      sig = .05
+    )
+  )
+}
+
+# Stop the cluster
+stopCluster(cl)
+
+# Combine the results back into the original dataframe
+df$share_reject <- res$share_reject
+
+# Print the dataframe to see the results
+print(df)
 
 library(magrittr)
 library(tidyverse)
@@ -130,45 +148,3 @@ df %>%
   geom_line() +
   geom_hline(yintercept = .05) +
   theme_bw() 
-
-
-
-
-
-#P?? oppgave 2, resirukuler forelesningsmaterialet fra 9.5,
-
-# The function detectCores finds the number of cores
-# available on the machine. We update the "Cores"-value
-# to the minimum of the chosen cores and the available cores.
-maxcores <- 8
-Cores <- min(parallel::detectCores(), maxcores)
-
-# Instantiate the cores:
-cl <- makeCluster(Cores)
-
-# Next we register the cluster..
-registerDoParallel(cl)
-
-# Take the time as before:
-tic(paste0("Parallel loop, ", Cores, " cores"))
-res <-
-  foreach(
-    i = 1:nrow(df_res),
-    .combine = 'rbind',
-    .packages = c('magrittr', 'dplyr')
-  ) %dopar%
-  tibble( #Dette m?? endres for ?? passe inn i dette scriptet.Bruk map eller map_future. Fordel utover flere cores.
-    date = df_res$date[i],
-    lead_days = df_res$lead_days[i],
-    neg_eq =
-      test_neg_equity(
-        df,
-        startdate = df_res$date[i],
-        lead_days = df_res$lead_days[i]
-      )
-  )
-
-# Now that we're done, we close off the clusters
-stopCluster(cl)
-
-toc(log = TRUE)
